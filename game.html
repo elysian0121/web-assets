@@ -1,46 +1,60 @@
-async function initSystem() {
-    try {
-        if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-            const config = JSON.parse(__firebase_config);
-            firebase.initializeApp(config);
-            auth = firebase.auth();
-            db = firebase.firestore();
-            appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            firebaseEnabled = true;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Star Vocab Defense Game</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f0f0f0; }
+        h1 { text-align: center; }
+        #startButton:disabled { background: #ccc; cursor: not-allowed; }
+        #gameCanvas { display: block; margin: auto; border: 2px solid #333; }
+    </style>
+</head>
+<body>
+    <h1>Star Vocab Defense Game</h1>
+    <button id="startButton" disabled>Start Game</button>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        let canvas = document.getElementById('gameCanvas');
+        let context = canvas.getContext('2d');
+        let isGameReady = false;
 
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await auth.signInWithCustomToken(__initial_auth_token);
-            } else {
-                await auth.signInAnonymously();
+        function initializeGame() {
+            // Simulate game initialization
+            try {
+                // Load game assets and configurations
+                loadAssets();
+                isGameReady = true;
+            } catch (e) {
+                console.error('Game initialization failed:', e);
+                isGameReady = false;
             }
-
-            auth.onAuthStateChanged((user) => {
-                if (user) {
-                    currentUser = user;
-                    clearTimeout(safetyTimer);
-                    startBtn.disabled = false;
-                    startBtn.textContent = "開始遊戲";
-                    highscoreText.textContent = "系統就緒 (雲端模式)";
-                    loadHighScore();
-                }
-            });
-        } else {
-            throw new Error("Local Environment");
+            updateStartButton();
         }
-    } catch (e) {
-        console.warn("系統初始化失敗，進入離線模式:", e.message);
-        firebaseEnabled = false;
-        clearTimeout(safetyTimer);
-        // ✅ 關鍵修正：保持按鈕禁用，顯示明確訊息
-        startBtn.disabled = true;
-        startBtn.textContent = "無法啟動";
-        highscoreText.textContent = "❌ 系統初始化失敗 - 離線模式不支援遊玩\n請檢查網路連線後重新整理頁面";
-    }
-}
 
-// ✅ 移除 safetyTimer（刪除這段）
-// const safetyTimer = setTimeout(() => {
-//     if (startBtn.disabled) {
-//         enableStartButton("連線逾時，進入離線模式");
-//     }
-// }, 5000);
+        function loadAssets() {
+            // Simulate asset loading
+            // throw new Error('Failed to load assets.'); // Uncomment to simulate failure
+        }
+
+        function updateStartButton() {
+            document.getElementById('startButton').disabled = !isGameReady;
+        }
+
+        document.getElementById('startButton').onclick = function() {
+            if (isGameReady) {
+                startGame();
+            }
+        };
+
+        function startGame() {
+            console.log('Game has started!');
+            // Game logic goes here...
+        }
+
+        // Start the game initialization on load
+        window.onload = initializeGame;
+    </script>
+</body>
+</html>
