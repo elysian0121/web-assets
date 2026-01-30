@@ -1,60 +1,424 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Star Vocab Defense Game</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>星際單字防衛戰 - Star Vocab Defense</title>
+
+    <!-- Firebase UMD (compat) - 若不需要可移除 -->
+    <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore-compat.js"></script>
+
     <style>
-        body { font-family: Arial, sans-serif; background: #f0f0f0; }
-        h1 { text-align: center; }
-        #startButton:disabled { background: #ccc; cursor: not-allowed; }
-        #gameCanvas { display: block; margin: auto; border: 2px solid #333; }
+        body, html {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background-color: #050510;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
+        }
+        #game-container { position: relative; width: 100vw; height: 100vh; }
+        canvas { display:block; }
+        #ui-layer { position:absolute; top:20px; left:20px; color:#00f2ff; pointer-events:none; text-shadow:0 0 10px rgba(0,242,255,0.6); }
+        .stat-box { font-size:20px; margin-bottom:8px; }
+        #message-box {
+            position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+            background: rgba(0,0,0,0.92); border:2px solid #00f2ff; border-radius:16px;
+            padding:28px; min-width:320px; text-align:center; z-index:100; pointer-events:auto;
+        }
+        input {
+            background: rgba(255,255,255,0.06); border:1px solid #00f2ff; color:#fff;
+            padding:10px; font-size:16px; border-radius:6px; width:80%; margin-top:8px; text-align:center;
+        }
+        button {
+            margin-top:18px; padding:12px 26px; font-size:18px; font-weight:700; border-radius:8px;
+            border:none; cursor:pointer; background:#00f2ff; color:#000;
+        }
+        button:disabled { background:#444; color:#888; cursor:not-allowed; opacity:0.8; }
+        #current-input-display {
+            position:absolute; bottom:120px; left:50%; transform:translateX(-50%);
+            font-size:36px; font-family:'Courier New', monospace; letter-spacing:6px; color:#fff;
+            text-shadow:0 0 10px #00f2ff;
+        }
+        .highscore-info { color:#ffcc00; margin-top:12px; font-size:15px; white-space:pre-wrap; line-height:1.5; }
+        .error { color:#ff6b6b; font-weight:700; }
     </style>
 </head>
 <body>
-    <h1>Star Vocab Defense Game</h1>
-    <button id="startButton" disabled>Start Game</button>
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
-    <script>
-        let canvas = document.getElementById('gameCanvas');
-        let context = canvas.getContext('2d');
-        let isGameReady = false;
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
 
-        function initializeGame() {
-            // Simulate game initialization
+    <div id="ui-layer">
+        <div class="stat-box">分數: <span id="score-val">0</span></div>
+        <div class="stat-box">生命: <span id="health-val">5</span></div>
+        <div class="stat-box" style="font-size:14px;">玩家: <span id="player-name-display">未設定</span></div>
+    </div>
+
+    <div id="current-input-display"></div>
+
+    <div id="message-box">
+        <h1 id="msg-title">星際單字防衛戰</h1>
+
+        <div id="setup-ui">
+            <p>請輸入你的防衛官代號：</p>
+            <input id="username-input" maxlength="12" placeholder="你的名字" />
+        </div>
+
+        <div id="score-display" style="display:none;">
+            <p id="msg-desc"></p>
+        </div>
+
+        <div class="highscore-info" id="highscore-text">系統啟動中...</div>
+
+        <!-- 預設 disabled，若成功連線才啟用 -->
+        <button id="start-btn" disabled>載入中...</button>
+    </div>
+</div>
+
+<script>
+/*
+  重新設計流程說明:
+  - 頁面預設顯示「載入中...」，開始按鈕 disabled。
+  - 嘗試初始化 Firebase（若頁面有 __firebase_config）。
+  - 若成功登入/初始化 => 啟用按鈕並顯示「開始遊戲」與分數排行榜。
+  - 若失敗或沒有 Firebase 配置 => 保持按鈕 disabled，顯示明確「離線模式/無法遊玩」訊息，
+    按鈕文字保持「載入中...」且點擊無效（且會顯示提示）。
+  - 完整防呆：start 事件會檢查 disabled 狀態並拒絕啟動。
+*/
+
+(function () {
+    // DOM
+    const startBtn = document.getElementById('start-btn');
+    const highscoreText = document.getElementById('highscore-text');
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score-val');
+    const healthEl = document.getElementById('health-val');
+    const messageBox = document.getElementById('message-box');
+    const inputDisplay = document.getElementById('current-input-display');
+    const usernameInput = document.getElementById('username-input');
+
+    // Game state
+    let db = null, auth = null, currentUser = null;
+    let firebaseEnabled = false;
+    let appId = 'star-vocab-game';
+    let score = 0, health = 5, gameActive = false;
+    let enemies = [], particles = [], laser = null;
+    let targetEnemy = null, currentInput = "", spawnTimer = 0, spawnRate = 120;
+
+    // Sample vocab
+    const vocabList = [
+        {word:"vulnerable"}, {word:"accumulate"}, {word:"consciousness"},
+        {word:"ambiguous"}, {word:"optimistic"}, {word:"sustainable"},
+        {word:"inevitable"}, {word:"phenomenon"}, {word:"prejudice"},
+        {word:"substitute"}, {word:"guarantee"}, {word:"interpret"},
+        {word:"artificial"}, {word:"magnificent"}, {word:"prohibit"}
+    ];
+
+    // canvas resize
+    function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+    window.addEventListener('resize', resize); resize();
+
+    // Utility: show offline failure UI (keeps start disabled, start text shows 載入中...)
+    function showOfflineMode(reasonText) {
+        firebaseEnabled = false;
+        startBtn.disabled = true;
+        startBtn.textContent = "載入中...";
+        highscoreText.innerText = "離線模式 - 無法儲存與載入排行榜。\n" + (reasonText || "");
+        highscoreText.classList.add('error');
+        console.warn("Offline mode:", reasonText);
+    }
+
+    // Attempt to initialize Firebase and sign-in (if config is present)
+    async function initSystem() {
+        try {
+            // If page injects __firebase_config as JSON string (optional),
+            // use that. Otherwise treat as "no remote" environment.
+            if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                let config;
+                try {
+                    config = JSON.parse(__firebase_config);
+                } catch (err) {
+                    throw new Error("Invalid __firebase_config JSON");
+                }
+
+                // Initialize firebase (compat)
+                firebase.initializeApp(config);
+                auth = firebase.auth();
+                db = firebase.firestore();
+                appId = (typeof __app_id !== 'undefined' && __app_id) ? __app_id : appId;
+
+                // Sign in (custom token if provided, otherwise anonymous)
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await auth.signInWithCustomToken(__initial_auth_token);
+                } else {
+                    await auth.signInAnonymously();
+                }
+
+                // Wait for auth state
+                auth.onAuthStateChanged((user) => {
+                    if (user) {
+                        currentUser = user;
+                        firebaseEnabled = true;
+                        startBtn.disabled = false;
+                        startBtn.textContent = "開始遊戲";
+                        highscoreText.textContent = "系統就緒（雲端模式）";
+                        highscoreText.classList.remove('error');
+                        // load highscores but don't block start
+                        loadHighScore().catch(err => console.warn("loadHighScore failed:", err));
+                    } else {
+                        // no user — still consider offline in practice
+                        showOfflineMode("無法取得使用者狀態");
+                    }
+                });
+
+            } else {
+                // No firebase config provided -> offline behavior
+                showOfflineMode("系統未設定遠端儲存（無 __firebase_config）");
+            }
+        } catch (e) {
+            // Any error -> offline behavior
+            showOfflineMode(e && e.message ? e.message : "初始化錯誤");
+        }
+    }
+
+    // Load high score from firestore (best-effort; does nothing if offline)
+    async function loadHighScore() {
+        if (!firebaseEnabled || !db || !currentUser) return;
+        try {
+            const scoresCol = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('scores');
+            const snap = await scoresCol.get();
+            let max = 0, player = "無";
+            snap.forEach(doc => {
+                const d = doc.data();
+                if (d && typeof d.score === 'number' && d.score > max) { max = d.score; player = d.playerName || "匿名"; }
+            });
+            highscoreText.textContent = `全服最高分：${max}（玩家：${player}）`;
+        } catch (err) {
+            console.warn("loadHighScore error:", err);
+        }
+    }
+
+    // Save score (best effort; no-op offline)
+    async function saveScore(finalScore) {
+        if (!firebaseEnabled || !db || !currentUser) return;
+        try {
+            if (finalScore <= 0) return;
+            const pName = usernameInput.value || "匿名防衛官";
+            const scoreRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('scores').doc(currentUser.uid);
+            const doc = await scoreRef.get();
+            if (!doc.exists || (doc.data().score || 0) < finalScore) {
+                await scoreRef.set({ score: finalScore, playerName: pName, timestamp: Date.now(), userId: currentUser.uid });
+                loadHighScore();
+            }
+        } catch (err) {
+            console.warn("saveScore error:", err);
+        }
+    }
+
+    // Simple particle & enemy classes
+    class Particle {
+        constructor(x,y,color){ this.x=x; this.y=y; this.color=color; this.size=Math.random()*3+2; this.vx=(Math.random()-0.5)*6; this.vy=(Math.random()-0.5)*6; this.life=1; }
+        update(){ this.x+=this.vx; this.y+=this.vy; this.life-=0.03; }
+        draw(){ if (this.life<=0) return; ctx.save(); ctx.globalAlpha=Math.max(0,this.life); ctx.fillStyle=this.color; ctx.beginPath(); ctx.arc(this.x,this.y,this.size,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+    }
+    class Enemy {
+        constructor(wordObj){
+            this.word = wordObj.word;
+            this.x = Math.random() * (canvas.width - 220) + 110;
+            this.y = -40;
+            this.speed = 0.6 + Math.random() * 0.7 + (score / 2000);
+        }
+        update(){
+            this.y += this.speed;
+            if (this.y > canvas.height - 120) {
+                health = Math.max(0, health - 1);
+                healthEl.textContent = health;
+                if (health <= 0) gameOver();
+                return true;
+            }
+            return false;
+        }
+        draw(){
+            ctx.save();
+            ctx.font = "bold 22px 'Courier New', monospace";
+            const w = ctx.measureText(this.word).width;
+            ctx.fillStyle = "rgba(0, 18, 40, 0.85)";
+            ctx.fillRect(this.x - w/2 - 12, this.y - 18, w + 24, 36);
+            ctx.strokeStyle = (targetEnemy === this) ? "#00f2ff" : "#444";
+            ctx.lineWidth = (targetEnemy === this) ? 3 : 1;
+            ctx.strokeRect(this.x - w/2 - 12, this.y - 18, w + 24, 36);
+            ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            if (targetEnemy === this) {
+                const typed = this.word.substring(0, currentInput.length);
+                const rest = this.word.substring(currentInput.length);
+                const totalW = ctx.measureText(this.word).width;
+                const typedW = ctx.measureText(typed).width;
+                ctx.fillStyle = "#00f2ff"; ctx.fillText(typed, this.x - totalW/2 + typedW/2, this.y);
+                ctx.fillStyle = "#fff"; ctx.fillText(rest, this.x + totalW/2 - ctx.measureText(rest).width/2, this.y);
+            } else {
+                ctx.fillStyle = "#fff"; ctx.fillText(this.word, this.x, this.y);
+            }
+            ctx.restore();
+        }
+    }
+
+    // Game lifecycle functions
+    function gameOver(){
+        gameActive = false;
+        messageBox.style.display = "block";
+        document.getElementById('setup-ui').style.display = "none";
+        document.getElementById('score-display').style.display = "block";
+        document.getElementById('msg-title').textContent = "任務失敗！";
+        document.getElementById('msg-desc').innerHTML = `最終得分：${score}`;
+        // 如果後端可用則允許重新挑戰（按鈕可用）
+        if (firebaseEnabled) {
+            startBtn.disabled = false;
+            startBtn.textContent = "重新挑戰";
+        } else {
+            // 保持載入樣式與 disabled，符合「無法玩」需求
+            startBtn.disabled = true;
+            startBtn.textContent = "載入中...";
+        }
+        saveScore(score).catch(()=>{/* ignore */});
+    }
+
+    function speak(word) {
+        if ('speechSynthesis' in window) {
             try {
-                // Load game assets and configurations
-                loadAssets();
-                isGameReady = true;
-            } catch (e) {
-                console.error('Game initialization failed:', e);
-                isGameReady = false;
+                const u = new SpeechSynthesisUtterance(word);
+                u.lang = 'en-US';
+                window.speechSynthesis.cancel();
+                window.speechSynthesis.speak(u);
+            } catch(e){ /* ignore speech errors */ }
+        }
+    }
+
+    function update(){
+        if (!gameActive) return;
+        spawnTimer++;
+        if (spawnTimer >= spawnRate) {
+            enemies.push(new Enemy(vocabList[Math.floor(Math.random()*vocabList.length)]));
+            spawnTimer = 0;
+            spawnRate = Math.max(60, 120 - Math.floor(score / 400));
+        }
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            if (enemies[i].update()) {
+                if (targetEnemy === enemies[i]) { targetEnemy = null; currentInput = ""; inputDisplay.textContent = ""; }
+                enemies.splice(i, 1);
             }
-            updateStartButton();
         }
-
-        function loadAssets() {
-            // Simulate asset loading
-            // throw new Error('Failed to load assets.'); // Uncomment to simulate failure
+        for (let i = particles.length - 1; i >= 0; i--) {
+            particles[i].update();
+            if (particles[i].life <= 0) particles.splice(i,1);
         }
+        if (laser) { laser.life--; if (laser.life <= 0) laser = null; }
+    }
 
-        function updateStartButton() {
-            document.getElementById('startButton').disabled = !isGameReady;
+    function draw(){
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        // subtle background stars
+        ctx.fillStyle = "rgba(255,255,255,0.06)";
+        for (let i=0;i<30;i++) ctx.fillRect((i*137)%canvas.width, (i*243)%canvas.height, 2, 2);
+
+        enemies.forEach(e => e.draw());
+        particles.forEach(p => p.draw());
+
+        // tower
+        const cx = canvas.width/2, cy = canvas.height-50;
+        ctx.save(); ctx.translate(cx, cy);
+        if (targetEnemy) ctx.rotate(Math.atan2(targetEnemy.y - cy, targetEnemy.x - cx) + Math.PI/2);
+        ctx.fillStyle = "#00f2ff"; ctx.fillRect(-12, -45, 24, 45);
+        ctx.beginPath(); ctx.arc(0,0,35,0,Math.PI,true); ctx.fillStyle = "#003366"; ctx.fill();
+        ctx.restore();
+
+        // laser
+        if (laser) {
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(laser.tx, laser.ty);
+            ctx.strokeStyle = "#00f2ff";
+            ctx.lineWidth = Math.max(1, laser.life * 2);
+            ctx.stroke();
         }
+    }
 
-        document.getElementById('startButton').onclick = function() {
-            if (isGameReady) {
-                startGame();
+    function gameLoop(){
+        update();
+        draw();
+        requestAnimationFrame(gameLoop);
+    }
+
+    // Input handling
+    window.addEventListener('keydown', (e) => {
+        if (!gameActive) return;
+        const key = e.key.toLowerCase();
+        if (!/^[a-z]$/.test(key)) return;
+        if (!targetEnemy) {
+            const matches = enemies.filter(en => en.word.startsWith(key));
+            if (matches.length > 0) {
+                matches.sort((a,b)=>b.y - a.y); // choose lowest (closest to bottom)
+                targetEnemy = matches[0];
+                currentInput = key;
             }
-        };
+        } else {
+            if (key === targetEnemy.word[currentInput.length]) {
+                currentInput += key;
+            }
+        }
+        inputDisplay.textContent = currentInput.toUpperCase();
+        if (targetEnemy && currentInput === targetEnemy.word) {
+            laser = { tx: targetEnemy.x, ty: targetEnemy.y, life: 10 };
+            speak(targetEnemy.word);
+            score += targetEnemy.word.length * 10;
+            scoreEl.textContent = score;
+            for (let i=0;i<12;i++) particles.push(new Particle(targetEnemy.x, targetEnemy.y, "#00f2ff"));
+            enemies = enemies.filter(en => en !== targetEnemy);
+            targetEnemy = null; currentInput = ""; inputDisplay.textContent = "";
+        }
+    });
 
-        function startGame() {
-            console.log('Game has started!');
-            // Game logic goes here...
+    // Start button click - defensive: if disabled -> show message and do nothing
+    startBtn.addEventListener('click', () => {
+        if (startBtn.disabled) {
+            // 明確告知為何不能開始（線上/離線）
+            if (firebaseEnabled) {
+                alert("載入中... 稍候再試。");
+            } else {
+                alert("系統處於離線模式，無法開始遊戲。請檢查網路連線後重新整理頁面。");
+            }
+            return;
         }
 
-        // Start the game initialization on load
-        window.onload = initializeGame;
-    </script>
+        // enable UI for gameplay
+        document.getElementById('player-name-display').textContent = usernameInput.value || "匿名防衛官";
+        document.getElementById('setup-ui').style.display = "none";
+        document.getElementById('score-display').style.display = "none";
+
+        // reset game state
+        score = 0; health = 5; enemies = []; particles = []; laser = null;
+        targetEnemy = null; currentInput = ""; spawnTimer = 0; spawnRate = 120;
+        scoreEl.textContent = score; healthEl.textContent = health;
+        gameActive = true;
+        messageBox.style.display = "none";
+    });
+
+    // Kick off
+    initSystem();
+    gameLoop();
+
+    // Expose a small debug function on window to force offline / online in dev console if needed:
+    window.__debug_setOffline = function(reason) {
+        showOfflineMode(reason || "手動切換為離線");
+    };
+    window.__debug_setOnline = function() {
+        // This helper does not actually initialize firebase; for full online behavior
+        // reload page with __firebase_config set, or call initSystem() after config is present.
+        console.info("要啟用線上模式，請在全域加入 __firebase_config 並重新整理或呼叫 initSystem()");
+    };
+})();
+</script>
 </body>
 </html>
