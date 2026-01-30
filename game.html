@@ -46,33 +46,43 @@
             margin-bottom: 5px;
         }
 
-        /* 虛擬鍵盤樣式 */
+        /* 虛擬鍵盤樣式優化 */
         #virtual-keyboard {
             width: 100%;
-            background: rgba(10, 10, 30, 0.9);
-            padding: 10px 0;
-            display: grid;
-            grid-template-columns: repeat(10, 1fr);
-            gap: 5px;
+            background: rgba(10, 10, 30, 0.95);
+            padding: 10px 5px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
             box-sizing: border-box;
-            border-top: 1px solid #00f2ff;
-            padding-bottom: env(safe-area-inset-bottom);
+            border-top: 2px solid #00f2ff;
+            padding-bottom: env(safe-area-inset-bottom, 10px);
+        }
+
+        .keyboard-row {
+            display: flex;
+            justify-content: center;
+            gap: 5px;
+            width: 100%;
         }
 
         .key {
             background: rgba(0, 242, 255, 0.1);
             border: 1px solid #00f2ff;
             color: #00f2ff;
-            height: 45px;
+            flex: 1;
+            max-width: 40px;
+            height: 50px;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: bold;
-            border-radius: 4px;
+            border-radius: 6px;
             font-size: 18px;
             cursor: pointer;
             user-select: none;
             -webkit-tap-highlight-color: transparent;
+            transition: background 0.1s;
         }
 
         .key:active {
@@ -119,7 +129,7 @@
 
         #current-input-display {
             position: absolute;
-            bottom: 230px; /* 避開虛擬鍵盤 */
+            bottom: 240px; 
             left: 50%;
             transform: translateX(-50%);
             color: #fff;
@@ -129,6 +139,7 @@
             text-shadow: 0 0 10px #00f2ff;
             min-height: 40px;
             pointer-events: none;
+            z-index: 5;
         }
 
         .highscore-info {
@@ -160,17 +171,20 @@
         <button id="start-btn" disabled>連線中...</button>
     </div>
 
-    <!-- 虛擬鍵盤 -->
+    <!-- 虛擬鍵盤 (修正版) -->
     <div id="virtual-keyboard">
-        <!-- 第一排 -->
-        <div class="key" data-key="q">Q</div><div class="key" data-key="w">W</div><div class="key" data-key="e">E</div><div class="key" data-key="r">R</div><div class="key" data-key="t">T</div>
-        <div class="key" data-key="y">Y</div><div class="key" data-key="u">U</div><div class="key" data-key="i">I</div><div class="key" data-key="o">O</div><div class="key" data-key="p">P</div>
-        <!-- 第二排 -->
-        <div class="key" data-key="a">A</div><div class="key" data-key="s">S</div><div class="key" data-key="d">D</div><div class="key" data-key="f">F</div><div class="key" data-key="g">G</div>
-        <div class="key" data-key="h">H</div><div class="key" data-key="j">J</div><div class="key" data-key="k">K</div><div class="key" data-key="l">L</div><div class="key" style="visibility:hidden"></div>
-        <!-- 第三排 -->
-        <div class="key" style="visibility:hidden"></div><div class="key" data-key="z">Z</div><div class="key" data-key="x">X</div><div class="key" data-key="c">C</div><div class="key" data-key="v">V</div>
-        <div class="key" data-key="b">B</div><div class="key" data-key="n">N</div><div class="key" data-key="m">M</div><div class="key" style="visibility:hidden"></div><div class="key" style="visibility:hidden"></div>
+        <div class="keyboard-row">
+            <div class="key" data-key="q">Q</div><div class="key" data-key="w">W</div><div class="key" data-key="e">E</div><div class="key" data-key="r">R</div><div class="key" data-key="t">T</div>
+            <div class="key" data-key="y">Y</div><div class="key" data-key="u">U</div><div class="key" data-key="i">I</div><div class="key" data-key="o">O</div><div class="key" data-key="p">P</div>
+        </div>
+        <div class="keyboard-row">
+            <div class="key" data-key="a">A</div><div class="key" data-key="s">S</div><div class="key" data-key="d">D</div><div class="key" data-key="f">F</div><div class="key" data-key="g">G</div>
+            <div class="key" data-key="h">H</div><div class="key" data-key="j">J</div><div class="key" data-key="k">K</div><div class="key" data-key="l">L</div>
+        </div>
+        <div class="keyboard-row">
+            <div class="key" data-key="z">Z</div><div class="key" data-key="x">X</div><div class="key" data-key="c">C</div><div class="key" data-key="v">V</div>
+            <div class="key" data-key="b">B</div><div class="key" data-key="n">N</div><div class="key" data-key="m">M</div>
+        </div>
     </div>
 </div>
 
@@ -392,15 +406,15 @@
     });
 
     document.querySelectorAll('.key').forEach(keyEl => {
+        const char = keyEl.getAttribute('data-key');
+        if (!char) return;
+
         keyEl.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            const char = keyEl.getAttribute('data-key');
-            if (char) handleInput(char);
+            handleInput(char);
         });
-        // 同時支援滑鼠點擊
         keyEl.addEventListener('mousedown', (e) => {
-            const char = keyEl.getAttribute('data-key');
-            if (char) handleInput(char);
+            handleInput(char);
         });
     });
 
