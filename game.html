@@ -143,12 +143,33 @@
 </div>
 
 <script>
-    // Firebase 初始化與全域變數
-    const firebaseConfig = JSON.parse(__firebase_config);
-    firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
-    const db = firebase.firestore();
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    // --- Firebase 安全載入邏輯 ---
+    let db = null;
+    let auth = null;
+    let appId = 'star-vocab-game';
+    let firebaseEnabled = false;
+
+    try {
+        // 檢查環境變數是否存在 (Canvas 環境)
+        if (typeof __firebase_config !== 'undefined') {
+            const firebaseConfig = JSON.parse(__firebase_config);
+            firebase.initializeApp(firebaseConfig);
+            auth = firebase.auth();
+            db = firebase.firestore();
+            appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            firebaseEnabled = true;
+            console.log("Firebase initialized via environment config.");
+        } else {
+            // 如果是在 GitHub Pages 或本地執行且沒有填寫自己的 config
+            console.warn("Firebase config not found. Running in local-only mode.");
+            document.getElementById('highscore-text').textContent = "離線模式 (無法儲存紀錄)";
+            enableStartButton();
+        }
+    } catch (e) {
+        console.error("Firebase Initialization Error:", e);
+        document.getElementById('highscore-text').textContent = "系統初始化失敗，改為離線模式";
+        enableStartButton();
+    }
 
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
@@ -183,10 +204,15 @@
     let spawnRate = 120;
     let currentUser = null;
 
-    // 初始化驗證 (RULE 3)
+    function enableStartButton() {
+        startBtn.disabled = false;
+        startBtn.textContent = "開始遊戲";
+    }
+
+    // 初始化驗證 (僅在有 Firebase 時執行)
     async function initAuth() {
+        if (!firebaseEnabled) return;
         try {
-            // 優先嘗試 Custom Token
             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                 await auth.signInWithCustomToken(__initial_auth_token);
             } else {
@@ -194,30 +220,30 @@
             }
         } catch (e) {
             console.error("Auth Failed", e);
-            highscoreText.textContent = "網路連線異常";
+            firebaseEnabled = false;
+            highscoreText.textContent = "網路異常，改為離線模式";
+            enableStartButton();
         }
     }
 
-    auth.onAuthStateChanged(async (user) => {
-        if (user) {
-            currentUser = user;
-            startBtn.disabled = false;
-            startBtn.textContent = "開始遊戲";
-            loadHighScore();
-        }
-    });
+    if (firebaseEnabled) {
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                currentUser = user;
+                enableStartButton();
+                loadHighScore();
+            }
+        });
+        initAuth();
+    }
 
-    // 載入最高分 (RULE 1 & 2)
     async function loadHighScore() {
-        if (!currentUser) return;
+        if (!firebaseEnabled || !currentUser) return;
         try {
-            // 使用嚴格的路徑結構
             const scoresCol = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('scores');
             const snapshot = await scoresCol.get();
-            
             let max = 0;
             let player = "無";
-            
             snapshot.forEach((doc) => {
                 const data = doc.data();
                 if (data.score > max) {
@@ -225,22 +251,17 @@
                     player = data.playerName;
                 }
             });
-            
             highscoreText.textContent = `全服最高分：${max} (玩家: ${player})`;
         } catch (e) {
             console.error("Load Scores Error:", e);
-            highscoreText.textContent = "無法載入排行榜";
         }
     }
 
-    // 儲存分數
     async function saveScore(finalScore) {
-        if (!currentUser || finalScore <= 0) return;
+        if (!firebaseEnabled || !currentUser || finalScore <= 0) return;
         try {
             const playerName = usernameInput.value || "匿名防衛官";
-            // 使用嚴格的路徑結構
             const scoreRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('scores').doc(currentUser.uid);
-            
             const docSnap = await scoreRef.get();
             if (!docSnap.exists || finalScore > docSnap.data().score) {
                 await scoreRef.set({
@@ -256,7 +277,7 @@
         }
     }
 
-    // 遊戲邏輯與繪製
+    // --- 遊戲渲染與控制邏輯 ---
     function resize() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
@@ -372,15 +393,10 @@
 
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        // 簡易背景
         ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
         for(let i=0; i<30; i++) ctx.fillRect((i * 137) % canvas.width, (i * 243) % canvas.height, 2, 2);
-
         enemies.forEach(enemy => enemy.draw());
         particles.forEach(p => p.draw());
-        
-        // 畫砲台
         const centerX = canvas.width / 2;
         const centerY = canvas.height - 50;
         ctx.save();
@@ -393,7 +409,6 @@
         ctx.beginPath(); ctx.arc(0, 0, 35, 0, Math.PI, true);
         ctx.fillStyle = "#003366"; ctx.fill(); ctx.stroke();
         ctx.restore();
-
         if (laser) {
             ctx.save(); ctx.beginPath();
             ctx.moveTo(canvas.width / 2, canvas.height - 50);
@@ -413,7 +428,6 @@
         if (!gameActive) return;
         const char = e.key.toLowerCase();
         if (!/^[a-z]$/.test(char)) return;
-        
         if (!targetEnemy) {
             let matches = enemies.filter(en => en.word.startsWith(char));
             if (matches.length > 0) { 
@@ -422,13 +436,9 @@
                 currentInput = char; 
             }
         } else {
-            if (char === targetEnemy.word[currentInput.length]) {
-                currentInput += char;
-            }
+            if (char === targetEnemy.word[currentInput.length]) currentInput += char;
         }
-        
         inputDisplay.textContent = currentInput.toUpperCase();
-
         if (targetEnemy && currentInput === targetEnemy.word) {
             laser = { targetX: targetEnemy.x, targetY: targetEnemy.y, life: 12 };
             speak(targetEnemy.word);
@@ -436,14 +446,11 @@
             scoreEl.textContent = score;
             for (let i = 0; i < 20; i++) particles.push(new Particle(targetEnemy.x, targetEnemy.y, "#00f2ff"));
             enemies = enemies.filter(en => en !== targetEnemy);
-            targetEnemy = null; 
-            currentInput = ""; 
-            inputDisplay.textContent = "";
+            targetEnemy = null; currentInput = ""; inputDisplay.textContent = "";
         }
     });
 
     startBtn.addEventListener('click', () => {
-        if (!currentUser) return;
         document.getElementById('player-name-display').textContent = usernameInput.value || "匿名防衛官";
         score = 0; health = 5; enemies = []; particles = []; targetEnemy = null;
         currentInput = ""; scoreEl.textContent = "0"; healthEl.textContent = health;
@@ -451,8 +458,6 @@
         messageBox.style.display = "none";
     });
 
-    // 啟動流程
-    initAuth();
     gameLoop();
 </script>
 </body>
