@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>星際單字防衛戰 - Star Vocab Defense</title>
+    <!-- 使用標準 UMD 匯入以確保穩定性 -->
+    <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore-compat.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050510;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #00f2ff;
+            pointer-events: none;
+            text-shadow: 0 0 10px rgba(0, 242, 255, 0.7);
+        }
+
+        .stat-box {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        #message-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: white;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 40px;
+            border: 2px solid #00f2ff;
+            border-radius: 20px;
+            display: block;
+            pointer-events: auto;
+            z-index: 100;
+            min-width: 300px;
+        }
+
+        input {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid #00f2ff;
+            color: white;
+            padding: 10px;
+            font-size: 18px;
+            margin-top: 10px;
+            text-align: center;
+            width: 80%;
+        }
+
+        button {
+            background: #00f2ff;
+            color: #000;
+            border: none;
+            padding: 15px 30px;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: all 0.3s;
+        }
+
+        button:disabled {
+            background: #444;
+            color: #888;
+            cursor: not-allowed;
+        }
+
+        button:hover:not(:disabled) {
+            background: #fff;
+            box-shadow: 0 0 20px #00f2ff;
+        }
+
+        #current-input-display {
+            position: absolute;
+            bottom: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            font-size: 40px;
+            font-family: 'Courier New', Courier, monospace;
+            letter-spacing: 5px;
+            text-shadow: 0 0 10px #00f2ff;
+            min-height: 50px;
+        }
+
+        .highscore-info {
+            color: #ffcc00;
+            margin-top: 15px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui-layer">
+        <div class="stat-box">分數: <span id="score-val">0</span></div>
+        <div class="stat-box">生命: <span id="health-val">5</span></div>
+        <div class="stat-box" style="font-size: 16px;">玩家: <span id="player-name-display">未設定</span></div>
+    </div>
+
+    <div id="current-input-display"></div>
+
+    <div id="message-box">
+        <h1 id="msg-title">星際單字防衛戰</h1>
+        <div id="setup-ui">
+            <p>請輸入你的防衛官代號：</p>
+            <input type="text" id="username-input" maxlength="10" placeholder="你的名字">
+        </div>
+        <div id="score-display" style="display:none">
+            <p id="msg-desc"></p>
+        </div>
+        <div class="highscore-info" id="highscore-text">正在初始化系統...</div>
+        <button id="start-btn" disabled>載入中...</button>
+    </div>
+</div>
+
+<script>
+    // Firebase 初始化與全域變數
+    const firebaseConfig = JSON.parse(__firebase_config);
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score-val');
+    const healthEl = document.getElementById('health-val');
+    const messageBox = document.getElementById('message-box');
+    const startBtn = document.getElementById('start-btn');
+    const inputDisplay = document.getElementById('current-input-display');
+    const highscoreText = document.getElementById('highscore-text');
+    const usernameInput = document.getElementById('username-input');
+
+    const vocabList = [
+        {word: "vulnerable", meaning: "易受傷的"}, {word: "accumulate", meaning: "累積"},
+        {word: "consciousness", meaning: "意識"}, {word: "ambiguous", meaning: "含糊的"},
+        {word: "optimistic", meaning: "樂觀的"}, {word: "sustainable", meaning: "可持續的"},
+        {word: "inevitable", meaning: "不可避免的"}, {word: "phenomenon", meaning: "現象"},
+        {word: "prejudice", meaning: "偏見"}, {word: "substitute", meaning: "代替"},
+        {word: "guarantee", meaning: "保證"}, {word: "interpret", meaning: "解釋"},
+        {word: "artificial", meaning: "人工的"}, {word: "magnificent", meaning: "壯麗的"},
+        {word: "prohibit", meaning: "禁止"}
+    ];
+
+    let score = 0;
+    let health = 5;
+    let gameActive = false;
+    let enemies = [];
+    let particles = [];
+    let laser = null;
+    let targetEnemy = null;
+    let currentInput = "";
+    let spawnTimer = 0;
+    let spawnRate = 120;
+    let currentUser = null;
+
+    // 初始化驗證 (RULE 3)
+    async function initAuth() {
+        try {
+            // 優先嘗試 Custom Token
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                await auth.signInWithCustomToken(__initial_auth_token);
+            } else {
+                await auth.signInAnonymously();
+            }
+        } catch (e) {
+            console.error("Auth Failed", e);
+            highscoreText.textContent = "網路連線異常";
+        }
+    }
+
+    auth.onAuthStateChanged(async (user) => {
+        if (user) {
+            currentUser = user;
+            startBtn.disabled = false;
+            startBtn.textContent = "開始遊戲";
+            loadHighScore();
+        }
+    });
+
+    // 載入最高分 (RULE 1 & 2)
+    async function loadHighScore() {
+        if (!currentUser) return;
+        try {
+            // 使用嚴格的路徑結構
+            const scoresCol = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('scores');
+            const snapshot = await scoresCol.get();
+            
+            let max = 0;
+            let player = "無";
+            
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                if (data.score > max) {
+                    max = data.score;
+                    player = data.playerName;
+                }
+            });
+            
+            highscoreText.textContent = `全服最高分：${max} (玩家: ${player})`;
+        } catch (e) {
+            console.error("Load Scores Error:", e);
+            highscoreText.textContent = "無法載入排行榜";
+        }
+    }
+
+    // 儲存分數
+    async function saveScore(finalScore) {
+        if (!currentUser || finalScore <= 0) return;
+        try {
+            const playerName = usernameInput.value || "匿名防衛官";
+            // 使用嚴格的路徑結構
+            const scoreRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('scores').doc(currentUser.uid);
+            
+            const docSnap = await scoreRef.get();
+            if (!docSnap.exists || finalScore > docSnap.data().score) {
+                await scoreRef.set({
+                    score: finalScore,
+                    playerName: playerName,
+                    timestamp: Date.now(),
+                    userId: currentUser.uid
+                });
+                loadHighScore();
+            }
+        } catch (e) {
+            console.error("Save Score Error:", e);
+        }
+    }
+
+    // 遊戲邏輯與繪製
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    class Particle {
+        constructor(x, y, color) {
+            this.x = x; this.y = y; this.color = color;
+            this.size = Math.random() * 3 + 2;
+            this.speedX = (Math.random() - 0.5) * 8;
+            this.speedY = (Math.random() - 0.5) * 8;
+            this.life = 1.0;
+        }
+        update() { this.x += this.speedX; this.y += this.speedY; this.life -= 0.02; }
+        draw() {
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, this.life);
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+
+    class Enemy {
+        constructor(wordObj) {
+            this.word = wordObj.word;
+            this.meaning = wordObj.meaning;
+            this.x = Math.random() * (canvas.width - 200) + 100;
+            this.y = -30;
+            this.speed = 0.6 + Math.random() * 0.4 + (score / 2000);
+            this.isDead = false;
+        }
+        update() {
+            this.y += this.speed;
+            if (this.y > canvas.height - 120) {
+                this.isDead = true;
+                health--;
+                healthEl.textContent = health;
+                if (health <= 0) gameOver();
+                return true;
+            }
+            return false;
+        }
+        draw() {
+            ctx.save();
+            ctx.font = "bold 24px 'Courier New'";
+            const textWidth = ctx.measureText(this.word).width;
+            ctx.fillStyle = "rgba(0, 20, 40, 0.8)";
+            ctx.fillRect(this.x - textWidth/2 - 15, this.y - 20, textWidth + 30, 40);
+            ctx.strokeStyle = (targetEnemy === this) ? "#00f2ff" : "#444";
+            ctx.lineWidth = (targetEnemy === this) ? 3 : 1;
+            ctx.strokeRect(this.x - textWidth/2 - 15, this.y - 20, textWidth + 30, 40);
+            ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            if (targetEnemy === this) {
+                const typed = this.word.substring(0, currentInput.length);
+                const untyped = this.word.substring(currentInput.length);
+                const totalW = ctx.measureText(this.word).width;
+                const typedW = ctx.measureText(typed).width;
+                ctx.fillStyle = "#00f2ff"; 
+                ctx.fillText(typed, this.x - totalW/2 + typedW/2, this.y);
+                ctx.fillStyle = "#ffffff"; 
+                ctx.fillText(untyped, this.x + totalW/2 - ctx.measureText(untyped).width/2, this.y);
+            } else {
+                ctx.fillStyle = "#ffffff";
+                ctx.fillText(this.word, this.x, this.y);
+            }
+            ctx.restore();
+        }
+    }
+
+    function gameOver() {
+        gameActive = false;
+        messageBox.style.display = "block";
+        document.getElementById('setup-ui').style.display = "none";
+        document.getElementById('score-display').style.display = "block";
+        document.getElementById('msg-title').textContent = "任務失敗！";
+        document.getElementById('msg-desc').innerHTML = `得分: ${score}`;
+        startBtn.textContent = "重新挑戰";
+        saveScore(score);
+    }
+
+    function speak(text) {
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US';
+            window.speechSynthesis.speak(utterance);
+        }
+    }
+
+    function update() {
+        if (!gameActive) return;
+        spawnTimer++;
+        if (spawnTimer >= spawnRate) {
+            const randomVocab = vocabList[Math.floor(Math.random() * vocabList.length)];
+            enemies.push(new Enemy(randomVocab));
+            spawnTimer = 0;
+            spawnRate = Math.max(60, 120 - Math.floor(score/400));
+        }
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            if (enemies[i].update()) {
+                if (targetEnemy === enemies[i]) { targetEnemy = null; currentInput = ""; inputDisplay.textContent = ""; }
+                enemies.splice(i, 1);
+            }
+        }
+        particles.forEach((p, index) => { p.update(); if (p.life <= 0) particles.splice(index, 1); });
+        if (laser) { laser.life--; if (laser.life <= 0) laser = null; }
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // 簡易背景
+        ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+        for(let i=0; i<30; i++) ctx.fillRect((i * 137) % canvas.width, (i * 243) % canvas.height, 2, 2);
+
+        enemies.forEach(enemy => enemy.draw());
+        particles.forEach(p => p.draw());
+        
+        // 畫砲台
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height - 50;
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        if (targetEnemy) {
+            const angle = Math.atan2(targetEnemy.y - centerY, targetEnemy.x - centerX);
+            ctx.rotate(angle + Math.PI / 2);
+        }
+        ctx.fillStyle = "#00f2ff"; ctx.fillRect(-12, -45, 24, 45);
+        ctx.beginPath(); ctx.arc(0, 0, 35, 0, Math.PI, true);
+        ctx.fillStyle = "#003366"; ctx.fill(); ctx.stroke();
+        ctx.restore();
+
+        if (laser) {
+            ctx.save(); ctx.beginPath();
+            ctx.moveTo(canvas.width / 2, canvas.height - 50);
+            ctx.lineTo(laser.targetX, laser.targetY);
+            ctx.strokeStyle = "#00f2ff"; ctx.lineWidth = laser.life * 2; ctx.stroke();
+            ctx.restore();
+        }
+    }
+
+    function gameLoop() { 
+        update(); 
+        draw(); 
+        requestAnimationFrame(gameLoop); 
+    }
+
+    window.addEventListener('keydown', (e) => {
+        if (!gameActive) return;
+        const char = e.key.toLowerCase();
+        if (!/^[a-z]$/.test(char)) return;
+        
+        if (!targetEnemy) {
+            let matches = enemies.filter(en => en.word.startsWith(char));
+            if (matches.length > 0) { 
+                matches.sort((a, b) => b.y - a.y); 
+                targetEnemy = matches[0]; 
+                currentInput = char; 
+            }
+        } else {
+            if (char === targetEnemy.word[currentInput.length]) {
+                currentInput += char;
+            }
+        }
+        
+        inputDisplay.textContent = currentInput.toUpperCase();
+
+        if (targetEnemy && currentInput === targetEnemy.word) {
+            laser = { targetX: targetEnemy.x, targetY: targetEnemy.y, life: 12 };
+            speak(targetEnemy.word);
+            score += targetEnemy.word.length * 10;
+            scoreEl.textContent = score;
+            for (let i = 0; i < 20; i++) particles.push(new Particle(targetEnemy.x, targetEnemy.y, "#00f2ff"));
+            enemies = enemies.filter(en => en !== targetEnemy);
+            targetEnemy = null; 
+            currentInput = ""; 
+            inputDisplay.textContent = "";
+        }
+    });
+
+    startBtn.addEventListener('click', () => {
+        if (!currentUser) return;
+        document.getElementById('player-name-display').textContent = usernameInput.value || "匿名防衛官";
+        score = 0; health = 5; enemies = []; particles = []; targetEnemy = null;
+        currentInput = ""; scoreEl.textContent = "0"; healthEl.textContent = health;
+        inputDisplay.textContent = ""; gameActive = true;
+        messageBox.style.display = "none";
+    });
+
+    // 啟動流程
+    initAuth();
+    gameLoop();
+</script>
+</body>
+</html>
