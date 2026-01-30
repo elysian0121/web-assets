@@ -14,7 +14,7 @@
             overflow: hidden;
             background-color: #050510;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            touch-action: manipulation; /* 禁止雙擊縮放 */
+            touch-action: manipulation;
         }
 
         #game-container {
@@ -44,7 +44,6 @@
 
         .stat-box { font-size: 18px; margin-bottom: 5px; }
 
-        /* --- 虛擬鍵盤樣式 --- */
         #virtual-keyboard {
             width: 100%;
             background: rgba(10, 10, 30, 0.98);
@@ -273,11 +272,12 @@
     }
 
     // --- 遊戲核心邏輯 ---
-    // 修改後的單字列表：依照順序排列
+    
+    // 這裡改成了你的句子
     const vocabSequence = [
-        "Ben", "is", "truly", "a", "kind", "smart", "good", "boy", "and", "Aunt", "Ruby", "loves", "him"
+        "Willy", "loves", "math", "and", "enjoys", "going", "out", "to", "play", "with", "Nana"
     ];
-    let sequenceIndex = 0; // 用來追蹤現在該出哪個字
+    let sequenceIndex = 0; // 用來控制順序
 
     let score = 0, health = 5, gameActive = false, enemies = [], particles = [], laser = null;
     let targetEnemy = null, currentInput = "", spawnTimer = 0, spawnRate = 120;
@@ -368,7 +368,6 @@
 
     function handleInput(char) {
         if (!gameActive) return;
-        // 轉小寫比較，避免大小寫問題
         const charLower = char.toLowerCase();
 
         if (!targetEnemy) {
@@ -421,11 +420,12 @@
         if (!gameActive) return;
         spawnTimer++;
         if (spawnTimer >= spawnRate) {
-            // 依照順序產生單字
+            
+            // 這裡改成依照 sequenceIndex 順序出字
             const nextWord = vocabSequence[sequenceIndex];
             enemies.push(new Enemy(nextWord));
-            sequenceIndex = (sequenceIndex + 1) % vocabSequence.length; // 循環索引
-            
+            sequenceIndex = (sequenceIndex + 1) % vocabSequence.length; // 循環播放
+
             spawnTimer = 0;
             spawnRate = Math.max(70, 120 - Math.floor(score/500));
         }
@@ -474,7 +474,9 @@
         score = 0; health = 5; enemies = []; particles = []; targetEnemy = null;
         currentInput = ""; scoreEl.textContent = "0"; healthEl.textContent = "5";
         inputDisplay.textContent = ""; gameActive = true;
-        sequenceIndex = 0; // 重置順序
+        
+        sequenceIndex = 0; // 每次重開遊戲都從頭開始：Willy...
+        
         messageBox.style.display = "none";
         resize();
     });
