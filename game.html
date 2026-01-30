@@ -15,74 +15,87 @@
             overflow: hidden;
             background-color: #050510;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            touch-action: manipulation;
+            touch-action: manipulation; /* 禁止雙擊縮放 */
         }
 
         #game-container {
             position: relative;
             width: 100vw;
-            height: 100vh;
+            /* 關鍵修正：使用 dvh (Dynamic Viewport Height) 解決手機網址列遮擋問題 */
+            height: 100vh; 
+            height: 100dvh; 
             display: flex;
             flex-direction: column;
         }
 
         canvas {
             display: block;
-            flex-grow: 1;
+            width: 100%;
+            /* 關鍵修正：讓 Canvas 佔據剩餘空間，但允許被壓縮 */
+            flex: 1;
+            min-height: 0; 
         }
 
         #ui-layer {
             position: absolute;
-            top: 10px;
-            left: 10px;
+            top: 10px; left: 10px;
             color: #00f2ff;
             pointer-events: none;
             text-shadow: 0 0 10px rgba(0, 242, 255, 0.7);
             z-index: 10;
         }
 
-        .stat-box {
-            font-size: 18px;
-            margin-bottom: 5px;
-        }
+        .stat-box { font-size: 18px; margin-bottom: 5px; }
 
-        /* 虛擬鍵盤樣式優化 */
+        /* --- 虛擬鍵盤樣式 --- */
         #virtual-keyboard {
             width: 100%;
-            background: rgba(10, 10, 30, 0.95);
-            padding: 10px 5px;
+            background: rgba(10, 10, 30, 0.98);
+            padding: 8px 4px;
+            /* 關鍵修正：防止鍵盤被壓縮 */
+            flex-shrink: 0; 
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 6px;
             box-sizing: border-box;
             border-top: 2px solid #00f2ff;
-            padding-bottom: env(safe-area-inset-bottom, 10px);
+            /* 支援 iPhone 底部安全區域 */
+            padding-bottom: env(safe-area-inset-bottom, 8px); 
+            z-index: 50;
+        }
+
+        /* 電腦版隱藏虛擬鍵盤 (寬度大於 768px 視為平板/桌面) */
+        @media (min-width: 768px) {
+            #virtual-keyboard {
+                display: none !important;
+            }
         }
 
         .keyboard-row {
             display: flex;
             justify-content: center;
-            gap: 5px;
+            gap: 4px;
             width: 100%;
         }
 
         .key {
-            background: rgba(0, 242, 255, 0.1);
+            background: rgba(0, 242, 255, 0.15);
             border: 1px solid #00f2ff;
             color: #00f2ff;
             flex: 1;
-            max-width: 40px;
-            height: 50px;
+            /* 限制最大寬度，讓按鍵在寬螢幕手機上不要太扁長 */
+            max-width: 45px; 
+            height: 48px; /* 固定高度 */
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: bold;
             border-radius: 6px;
-            font-size: 18px;
+            font-size: 20px;
             cursor: pointer;
             user-select: none;
             -webkit-tap-highlight-color: transparent;
-            transition: background 0.1s;
+            box-shadow: 0 0 5px rgba(0, 242, 255, 0.2);
         }
 
         .key:active {
@@ -92,8 +105,7 @@
 
         #message-box {
             position: absolute;
-            top: 40%;
-            left: 50%;
+            top: 40%; left: 50%;
             transform: translate(-50%, -50%);
             text-align: center;
             color: white;
@@ -109,44 +121,41 @@
         }
 
         button {
-            background: #00f2ff;
-            color: #000;
-            border: none;
-            padding: 12px 30px;
-            font-size: 20px;
-            font-weight: bold;
-            border-radius: 5px;
-            cursor: pointer;
-            margin-top: 15px;
-            transition: all 0.3s;
+            background: #00f2ff; color: #000;
+            border: none; padding: 12px 30px;
+            font-size: 20px; font-weight: bold;
+            border-radius: 5px; cursor: pointer;
+            margin-top: 15px; transition: all 0.3s;
         }
-
-        button:disabled {
-            background: #444;
-            color: #888;
-            cursor: not-allowed;
-        }
+        button:disabled { background: #444; color: #888; cursor: not-allowed; }
 
         #current-input-display {
             position: absolute;
-            bottom: 240px; 
+            /* 自動調整位置：如果在有鍵盤的手機上，位置會被 Canvas 壓縮自動推上去 */
+            bottom: 20px; 
             left: 50%;
             transform: translateX(-50%);
             color: #fff;
-            font-size: 30px;
+            font-size: 32px;
             font-family: 'Courier New', Courier, monospace;
             letter-spacing: 3px;
             text-shadow: 0 0 10px #00f2ff;
             min-height: 40px;
             pointer-events: none;
             z-index: 5;
+            background: rgba(0,0,0,0.5);
+            padding: 0 10px;
+            border-radius: 5px;
+        }
+        
+        /* 當虛擬鍵盤出現時，調整輸入顯示的位置，避免被鍵盤擋住（雖然 Flexbox 會處理，但這層保險更穩） */
+        @media (max-width: 767px) {
+            #current-input-display {
+                bottom: 10px; /* 相對於 Canvas 底部 */
+            }
         }
 
-        .highscore-info {
-            color: #ffcc00;
-            margin-top: 10px;
-            font-size: 16px;
-        }
+        .highscore-info { color: #ffcc00; margin-top: 10px; font-size: 16px; }
     </style>
 </head>
 <body>
@@ -159,9 +168,9 @@
         <div class="stat-box">生命: <span id="health-val">5</span></div>
     </div>
 
+    <!-- 將顯示框移入 Canvas 容器內部的相對位置邏輯由 CSS 處理 -->
     <div id="current-input-display"></div>
 
-    <!-- 訊息彈窗 -->
     <div id="message-box">
         <h1 id="msg-title" style="font-size: 24px;">星際單字防衛戰</h1>
         <div id="score-display" style="display:none">
@@ -171,7 +180,7 @@
         <button id="start-btn" disabled>連線中...</button>
     </div>
 
-    <!-- 虛擬鍵盤 (修正版) -->
+    <!-- 虛擬鍵盤 -->
     <div id="virtual-keyboard">
         <div class="keyboard-row">
             <div class="key" data-key="q">Q</div><div class="key" data-key="w">W</div><div class="key" data-key="e">E</div><div class="key" data-key="r">R</div><div class="key" data-key="t">T</div>
@@ -290,12 +299,17 @@
     let score = 0, health = 5, gameActive = false, enemies = [], particles = [], laser = null;
     let targetEnemy = null, currentInput = "", spawnTimer = 0, spawnRate = 120;
 
+    // 關鍵修正：解析度自適應
+    // 不再手動計算減法，而是直接讀取 CSS 排版後的 Canvas 實際尺寸
     function resize() {
-        canvas.width = canvas.parentElement.clientWidth;
-        canvas.height = canvas.parentElement.clientHeight - document.getElementById('virtual-keyboard').offsetHeight;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
     }
     window.addEventListener('resize', resize);
-    setTimeout(resize, 100);
+    
+    // 確保鍵盤載入後再次調整
+    setTimeout(resize, 200);
 
     class Particle {
         constructor(x, y, color) {
@@ -321,7 +335,7 @@
         }
         update() {
             this.y += this.speed;
-            if (this.y > canvas.height - 40) {
+            if (this.y > canvas.height - 10) { // 稍微降低判定線
                 health--; healthEl.textContent = health;
                 if (health <= 0) gameOver();
                 return true;
@@ -399,7 +413,6 @@
         }
     }
 
-    // 鍵盤與觸控事件
     window.addEventListener('keydown', (e) => {
         const char = e.key.toLowerCase();
         if (/^[a-z]$/.test(char)) handleInput(char);
@@ -414,6 +427,8 @@
             handleInput(char);
         });
         keyEl.addEventListener('mousedown', (e) => {
+            // 防止滑鼠點擊造成重複觸發或 focus 問題
+            e.preventDefault(); 
             handleInput(char);
         });
     });
@@ -445,9 +460,9 @@
         enemies.forEach(enemy => enemy.draw());
         particles.forEach(p => p.draw());
 
-        // 砲台
+        // 砲台 (確保在 Canvas 底部繪製)
         const cx = canvas.width / 2;
-        const cy = canvas.height - 20;
+        const cy = canvas.height - 25; 
         ctx.save();
         ctx.translate(cx, cy);
         if (targetEnemy) {
@@ -474,6 +489,7 @@
         currentInput = ""; scoreEl.textContent = "0"; healthEl.textContent = "5";
         inputDisplay.textContent = ""; gameActive = true;
         messageBox.style.display = "none";
+        // 點擊開始時強制重新計算佈局
         resize();
     });
 
