@@ -4,130 +4,68 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>星際單字防衛戰 - Star Vocab Defense</title>
-    <!-- 使用標準 UMD 匯入以確保穩定性 -->
+    <!-- 使用標準 UMD 匯入 -->
     <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore-compat.js"></script>
     <style>
         body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
             overflow: hidden;
             background-color: #050510;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-
-        #game-container {
-            position: relative;
-            width: 100vw;
-            height: 100vh;
-        }
-
-        canvas {
-            display: block;
-        }
-
+        #game-container { position: relative; width: 100vw; height: 100vh; }
+        canvas { display: block; }
         #ui-layer {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            color: #00f2ff;
-            pointer-events: none;
+            position: absolute; top: 20px; left: 20px;
+            color: #00f2ff; pointer-events: none;
             text-shadow: 0 0 10px rgba(0, 242, 255, 0.7);
         }
-
-        .stat-box {
-            font-size: 24px;
-            margin-bottom: 10px;
-        }
-
+        .stat-box { font-size: 24px; margin-bottom: 10px; }
         #message-box {
-            position: absolute;
-            top: 50%;
-            left: 50%;
+            position: absolute; top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            text-align: center;
-            color: white;
+            text-align: center; color: white;
             background: rgba(0, 0, 0, 0.9);
-            padding: 40px;
-            border: 2px solid #00f2ff;
-            border-radius: 20px;
-            display: block;
-            pointer-events: auto;
-            z-index: 100;
-            min-width: 300px;
+            padding: 40px; border: 2px solid #00f2ff;
+            border-radius: 20px; display: block;
+            pointer-events: auto; z-index: 100; min-width: 300px;
         }
-
         input {
             background: rgba(255, 255, 255, 0.1);
-            border: 1px solid #00f2ff;
-            color: white;
-            padding: 10px;
-            font-size: 18px;
-            margin-top: 10px;
-            text-align: center;
-            width: 80%;
+            border: 1px solid #00f2ff; color: white;
+            padding: 10px; font-size: 18px;
+            margin-top: 10px; text-align: center; width: 80%;
         }
-
         button {
-            background: #00f2ff;
-            color: #000;
-            border: none;
-            padding: 15px 30px;
-            font-size: 20px;
-            font-weight: bold;
-            border-radius: 5px;
-            cursor: pointer;
-            margin-top: 20px;
-            transition: all 0.3s;
+            background: #00f2ff; color: #000;
+            border: none; padding: 15px 30px;
+            font-size: 20px; font-weight: bold;
+            border-radius: 5px; cursor: pointer;
+            margin-top: 20px; transition: all 0.3s;
         }
-
-        button:disabled {
-            background: #444;
-            color: #888;
-            cursor: not-allowed;
-        }
-
-        button:hover:not(:disabled) {
-            background: #fff;
-            box-shadow: 0 0 20px #00f2ff;
-        }
-
+        button:disabled { background: #444; color: #888; cursor: not-allowed; }
         #current-input-display {
-            position: absolute;
-            bottom: 120px;
-            left: 50%;
-            transform: translateX(-50%);
-            color: #fff;
-            font-size: 40px;
-            font-family: 'Courier New', Courier, monospace;
-            letter-spacing: 5px;
-            text-shadow: 0 0 10px #00f2ff;
-            min-height: 50px;
+            position: absolute; bottom: 120px; left: 50%;
+            transform: translateX(-50%); color: #fff;
+            font-size: 40px; font-family: 'Courier New', Courier, monospace;
+            letter-spacing: 5px; text-shadow: 0 0 10px #00f2ff; min-height: 50px;
         }
-
-        .highscore-info {
-            color: #ffcc00;
-            margin-top: 15px;
-            font-size: 18px;
-        }
+        .highscore-info { color: #ffcc00; margin-top: 15px; font-size: 18px; }
     </style>
 </head>
 <body>
 
 <div id="game-container">
     <canvas id="gameCanvas"></canvas>
-    
     <div id="ui-layer">
         <div class="stat-box">分數: <span id="score-val">0</span></div>
         <div class="stat-box">生命: <span id="health-val">5</span></div>
         <div class="stat-box" style="font-size: 16px;">玩家: <span id="player-name-display">未設定</span></div>
     </div>
-
     <div id="current-input-display"></div>
-
     <div id="message-box">
         <h1 id="msg-title">星際單字防衛戰</h1>
         <div id="setup-ui">
@@ -137,48 +75,25 @@
         <div id="score-display" style="display:none">
             <p id="msg-desc"></p>
         </div>
-        <div class="highscore-info" id="highscore-text">正在初始化系統...</div>
+        <div class="highscore-info" id="highscore-text">系統啟動中...</div>
         <button id="start-btn" disabled>載入中...</button>
     </div>
 </div>
 
 <script>
-    // --- Firebase 安全載入邏輯 ---
-    let db = null;
-    let auth = null;
+    // --- 全域變數與 DOM ---
+    let db = null, auth = null, currentUser = null;
     let appId = 'star-vocab-game';
     let firebaseEnabled = false;
 
-    try {
-        // 檢查環境變數是否存在 (Canvas 環境)
-        if (typeof __firebase_config !== 'undefined') {
-            const firebaseConfig = JSON.parse(__firebase_config);
-            firebase.initializeApp(firebaseConfig);
-            auth = firebase.auth();
-            db = firebase.firestore();
-            appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            firebaseEnabled = true;
-            console.log("Firebase initialized via environment config.");
-        } else {
-            // 如果是在 GitHub Pages 或本地執行且沒有填寫自己的 config
-            console.warn("Firebase config not found. Running in local-only mode.");
-            document.getElementById('highscore-text').textContent = "離線模式 (無法儲存紀錄)";
-            enableStartButton();
-        }
-    } catch (e) {
-        console.error("Firebase Initialization Error:", e);
-        document.getElementById('highscore-text').textContent = "系統初始化失敗，改為離線模式";
-        enableStartButton();
-    }
-
+    const startBtn = document.getElementById('start-btn');
+    const highscoreText = document.getElementById('highscore-text');
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const scoreEl = document.getElementById('score-val');
     const healthEl = document.getElementById('health-val');
     const messageBox = document.getElementById('message-box');
-    const startBtn = document.getElementById('start-btn');
     const inputDisplay = document.getElementById('current-input-display');
-    const highscoreText = document.getElementById('highscore-text');
     const usernameInput = document.getElementById('username-input');
 
     const vocabList = [
@@ -192,96 +107,93 @@
         {word: "prohibit", meaning: "禁止"}
     ];
 
-    let score = 0;
-    let health = 5;
-    let gameActive = false;
-    let enemies = [];
-    let particles = [];
-    let laser = null;
-    let targetEnemy = null;
-    let currentInput = "";
-    let spawnTimer = 0;
-    let spawnRate = 120;
-    let currentUser = null;
+    let score = 0, health = 5, gameActive = false, enemies = [], particles = [], laser = null;
+    let targetEnemy = null, currentInput = "", spawnTimer = 0, spawnRate = 120;
 
-    function enableStartButton() {
+    // --- 初始化功能 ---
+
+    function enableStartButton(modeText) {
         startBtn.disabled = false;
         startBtn.textContent = "開始遊戲";
+        if (modeText) highscoreText.textContent = modeText;
     }
 
-    // 初始化驗證 (僅在有 Firebase 時執行)
-    async function initAuth() {
-        if (!firebaseEnabled) return;
+    // 終極保險：5秒後如果還在載入，強制解鎖按鈕
+    const safetyTimer = setTimeout(() => {
+        if (startBtn.disabled) {
+            enableStartButton("連線逾時，進入離線模式");
+        }
+    }, 5000);
+
+    async function initSystem() {
         try {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await auth.signInWithCustomToken(__initial_auth_token);
+            // 檢查是否在有 Firebase Config 的環境
+            if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                const config = JSON.parse(__firebase_config);
+                firebase.initializeApp(config);
+                auth = firebase.auth();
+                db = firebase.firestore();
+                appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                firebaseEnabled = true;
+
+                // 處理登入
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await auth.signInWithCustomToken(__initial_auth_token);
+                } else {
+                    await auth.signInAnonymously();
+                }
+
+                auth.onAuthStateChanged((user) => {
+                    if (user) {
+                        currentUser = user;
+                        clearTimeout(safetyTimer);
+                        enableStartButton("系統就緒 (雲端模式)");
+                        loadHighScore();
+                    }
+                });
             } else {
-                await auth.signInAnonymously();
+                throw new Error("Local Environment");
             }
         } catch (e) {
-            console.error("Auth Failed", e);
+            console.warn("Switching to offline mode:", e.message);
             firebaseEnabled = false;
-            highscoreText.textContent = "網路異常，改為離線模式";
-            enableStartButton();
+            clearTimeout(safetyTimer);
+            enableStartButton("離線模式 (無法儲存紀錄)");
         }
     }
 
-    if (firebaseEnabled) {
-        auth.onAuthStateChanged(async (user) => {
-            if (user) {
-                currentUser = user;
-                enableStartButton();
-                loadHighScore();
-            }
-        });
-        initAuth();
-    }
+    // --- 遊戲資料功能 ---
 
     async function loadHighScore() {
         if (!firebaseEnabled || !currentUser) return;
         try {
             const scoresCol = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('scores');
             const snapshot = await scoresCol.get();
-            let max = 0;
-            let player = "無";
+            let max = 0, player = "無";
             snapshot.forEach((doc) => {
                 const data = doc.data();
-                if (data.score > max) {
-                    max = data.score;
-                    player = data.playerName;
-                }
+                if (data.score > max) { max = data.score; player = data.playerName; }
             });
             highscoreText.textContent = `全服最高分：${max} (玩家: ${player})`;
-        } catch (e) {
-            console.error("Load Scores Error:", e);
-        }
+        } catch (e) { console.error(e); }
     }
 
     async function saveScore(finalScore) {
         if (!firebaseEnabled || !currentUser || finalScore <= 0) return;
         try {
-            const playerName = usernameInput.value || "匿名防衛官";
+            const pName = usernameInput.value || "匿名防衛官";
             const scoreRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('scores').doc(currentUser.uid);
-            const docSnap = await scoreRef.get();
-            if (!docSnap.exists || finalScore > docSnap.data().score) {
-                await scoreRef.set({
-                    score: finalScore,
-                    playerName: playerName,
-                    timestamp: Date.now(),
-                    userId: currentUser.uid
-                });
+            const doc = await scoreRef.get();
+            if (!doc.exists || finalScore > doc.data().score) {
+                await scoreRef.set({ score: finalScore, playerName: pName, timestamp: Date.now(), userId: currentUser.uid });
                 loadHighScore();
             }
-        } catch (e) {
-            console.error("Save Score Error:", e);
-        }
+        } catch (e) { console.error(e); }
     }
 
-    // --- 遊戲渲染與控制邏輯 ---
-    function resize() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    }
+    // --- 遊戲核心邏輯 ---
+
+    function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
     window.addEventListener('resize', resize);
     resize();
 
@@ -295,80 +207,60 @@
         }
         update() { this.x += this.speedX; this.y += this.speedY; this.life -= 0.02; }
         draw() {
-            ctx.save();
-            ctx.globalAlpha = Math.max(0, this.life);
-            ctx.fillStyle = this.color;
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
+            ctx.save(); ctx.globalAlpha = Math.max(0, this.life); ctx.fillStyle = this.color;
+            ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill(); ctx.restore();
         }
     }
 
     class Enemy {
         constructor(wordObj) {
-            this.word = wordObj.word;
-            this.meaning = wordObj.meaning;
-            this.x = Math.random() * (canvas.width - 200) + 100;
-            this.y = -30;
-            this.speed = 0.6 + Math.random() * 0.4 + (score / 2000);
-            this.isDead = false;
+            this.word = wordObj.word; this.x = Math.random() * (canvas.width - 200) + 100;
+            this.y = -30; this.speed = 0.6 + Math.random() * 0.4 + (score / 2000);
         }
         update() {
             this.y += this.speed;
             if (this.y > canvas.height - 120) {
-                this.isDead = true;
-                health--;
-                healthEl.textContent = health;
+                health--; healthEl.textContent = health;
                 if (health <= 0) gameOver();
                 return true;
             }
             return false;
         }
         draw() {
-            ctx.save();
-            ctx.font = "bold 24px 'Courier New'";
+            ctx.save(); ctx.font = "bold 24px 'Courier New'";
             const textWidth = ctx.measureText(this.word).width;
-            ctx.fillStyle = "rgba(0, 20, 40, 0.8)";
-            ctx.fillRect(this.x - textWidth/2 - 15, this.y - 20, textWidth + 30, 40);
+            ctx.fillStyle = "rgba(0, 20, 40, 0.8)"; ctx.fillRect(this.x - textWidth/2 - 15, this.y - 20, textWidth + 30, 40);
             ctx.strokeStyle = (targetEnemy === this) ? "#00f2ff" : "#444";
-            ctx.lineWidth = (targetEnemy === this) ? 3 : 1;
-            ctx.strokeRect(this.x - textWidth/2 - 15, this.y - 20, textWidth + 30, 40);
+            ctx.lineWidth = (targetEnemy === this) ? 3 : 1; ctx.strokeRect(this.x - textWidth/2 - 15, this.y - 20, textWidth + 30, 40);
             ctx.textAlign = "center"; ctx.textBaseline = "middle";
             if (targetEnemy === this) {
                 const typed = this.word.substring(0, currentInput.length);
                 const untyped = this.word.substring(currentInput.length);
                 const totalW = ctx.measureText(this.word).width;
                 const typedW = ctx.measureText(typed).width;
-                ctx.fillStyle = "#00f2ff"; 
-                ctx.fillText(typed, this.x - totalW/2 + typedW/2, this.y);
-                ctx.fillStyle = "#ffffff"; 
-                ctx.fillText(untyped, this.x + totalW/2 - ctx.measureText(untyped).width/2, this.y);
+                ctx.fillStyle = "#00f2ff"; ctx.fillText(typed, this.x - totalW/2 + typedW/2, this.y);
+                ctx.fillStyle = "#ffffff"; ctx.fillText(untyped, this.x + totalW/2 - ctx.measureText(untyped).width/2, this.y);
             } else {
-                ctx.fillStyle = "#ffffff";
-                ctx.fillText(this.word, this.x, this.y);
+                ctx.fillStyle = "#ffffff"; ctx.fillText(this.word, this.x, this.y);
             }
             ctx.restore();
         }
     }
 
     function gameOver() {
-        gameActive = false;
-        messageBox.style.display = "block";
+        gameActive = false; messageBox.style.display = "block";
         document.getElementById('setup-ui').style.display = "none";
         document.getElementById('score-display').style.display = "block";
         document.getElementById('msg-title').textContent = "任務失敗！";
-        document.getElementById('msg-desc').innerHTML = `得分: ${score}`;
-        startBtn.textContent = "重新挑戰";
-        saveScore(score);
+        document.getElementById('msg-desc').innerHTML = `最終得分: ${score}`;
+        startBtn.textContent = "重新挑戰"; saveScore(score);
     }
 
     function speak(text) {
         if ('speechSynthesis' in window) {
             window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'en-US';
-            window.speechSynthesis.speak(utterance);
+            const u = new SpeechSynthesisUtterance(text); u.lang = 'en-US';
+            window.speechSynthesis.speak(u);
         }
     }
 
@@ -376,10 +268,8 @@
         if (!gameActive) return;
         spawnTimer++;
         if (spawnTimer >= spawnRate) {
-            const randomVocab = vocabList[Math.floor(Math.random() * vocabList.length)];
-            enemies.push(new Enemy(randomVocab));
-            spawnTimer = 0;
-            spawnRate = Math.max(60, 120 - Math.floor(score/400));
+            enemies.push(new Enemy(vocabList[Math.floor(Math.random() * vocabList.length)]));
+            spawnTimer = 0; spawnRate = Math.max(60, 120 - Math.floor(score/400));
         }
         for (let i = enemies.length - 1; i >= 0; i--) {
             if (enemies[i].update()) {
@@ -387,42 +277,29 @@
                 enemies.splice(i, 1);
             }
         }
-        particles.forEach((p, index) => { p.update(); if (p.life <= 0) particles.splice(index, 1); });
+        particles.forEach((p, idx) => { p.update(); if (p.life <= 0) particles.splice(idx, 1); });
         if (laser) { laser.life--; if (laser.life <= 0) laser = null; }
     }
 
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
         for(let i=0; i<30; i++) ctx.fillRect((i * 137) % canvas.width, (i * 243) % canvas.height, 2, 2);
-        enemies.forEach(enemy => enemy.draw());
+        enemies.forEach(e => e.draw());
         particles.forEach(p => p.draw());
-        const centerX = canvas.width / 2;
-        const centerY = canvas.height - 50;
-        ctx.save();
-        ctx.translate(centerX, centerY);
-        if (targetEnemy) {
-            const angle = Math.atan2(targetEnemy.y - centerY, targetEnemy.x - centerX);
-            ctx.rotate(angle + Math.PI / 2);
-        }
+        const cx = canvas.width / 2, cy = canvas.height - 50;
+        ctx.save(); ctx.translate(cx, cy);
+        if (targetEnemy) ctx.rotate(Math.atan2(targetEnemy.y - cy, targetEnemy.x - cx) + Math.PI/2);
         ctx.fillStyle = "#00f2ff"; ctx.fillRect(-12, -45, 24, 45);
         ctx.beginPath(); ctx.arc(0, 0, 35, 0, Math.PI, true);
-        ctx.fillStyle = "#003366"; ctx.fill(); ctx.stroke();
-        ctx.restore();
+        ctx.fillStyle = "#003366"; ctx.fill(); ctx.restore();
         if (laser) {
-            ctx.save(); ctx.beginPath();
-            ctx.moveTo(canvas.width / 2, canvas.height - 50);
-            ctx.lineTo(laser.targetX, laser.targetY);
+            ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(laser.tx, laser.ty);
             ctx.strokeStyle = "#00f2ff"; ctx.lineWidth = laser.life * 2; ctx.stroke();
-            ctx.restore();
         }
     }
 
-    function gameLoop() { 
-        update(); 
-        draw(); 
-        requestAnimationFrame(gameLoop); 
-    }
+    function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
 
     window.addEventListener('keydown', (e) => {
         if (!gameActive) return;
@@ -430,21 +307,16 @@
         if (!/^[a-z]$/.test(char)) return;
         if (!targetEnemy) {
             let matches = enemies.filter(en => en.word.startsWith(char));
-            if (matches.length > 0) { 
-                matches.sort((a, b) => b.y - a.y); 
-                targetEnemy = matches[0]; 
-                currentInput = char; 
-            }
-        } else {
-            if (char === targetEnemy.word[currentInput.length]) currentInput += char;
+            if (matches.length > 0) { matches.sort((a,b)=>b.y - a.y); targetEnemy = matches[0]; currentInput = char; }
+        } else if (char === targetEnemy.word[currentInput.length]) {
+            currentInput += char;
         }
         inputDisplay.textContent = currentInput.toUpperCase();
         if (targetEnemy && currentInput === targetEnemy.word) {
-            laser = { targetX: targetEnemy.x, targetY: targetEnemy.y, life: 12 };
-            speak(targetEnemy.word);
-            score += targetEnemy.word.length * 10;
+            laser = { tx: targetEnemy.x, ty: targetEnemy.y, life: 10 };
+            speak(targetEnemy.word); score += targetEnemy.word.length * 10;
             scoreEl.textContent = score;
-            for (let i = 0; i < 20; i++) particles.push(new Particle(targetEnemy.x, targetEnemy.y, "#00f2ff"));
+            for(let i=0; i<15; i++) particles.push(new Particle(targetEnemy.x, targetEnemy.y, "#00f2ff"));
             enemies = enemies.filter(en => en !== targetEnemy);
             targetEnemy = null; currentInput = ""; inputDisplay.textContent = "";
         }
@@ -453,11 +325,11 @@
     startBtn.addEventListener('click', () => {
         document.getElementById('player-name-display').textContent = usernameInput.value || "匿名防衛官";
         score = 0; health = 5; enemies = []; particles = []; targetEnemy = null;
-        currentInput = ""; scoreEl.textContent = "0"; healthEl.textContent = health;
-        inputDisplay.textContent = ""; gameActive = true;
-        messageBox.style.display = "none";
+        currentInput = ""; scoreEl.textContent = "0"; healthEl.textContent = "5";
+        gameActive = true; messageBox.style.display = "none";
     });
 
+    initSystem();
     gameLoop();
 </script>
 </body>
