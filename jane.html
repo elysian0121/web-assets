@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>星際單字防衛戰 - Star Vocab Defense</title>
+    <!-- 使用 UMD 匯入以確保 GitHub 環境相容性 -->
+    <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore-compat.js"></script>
+    <style>
+        body, html {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background-color: #050510;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: manipulation; /* 禁止雙擊縮放 */
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh; 
+            height: 100dvh; 
+            display: flex;
+            flex-direction: column;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            flex: 1;
+            min-height: 0; 
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 10px; left: 10px;
+            color: #00f2ff;
+            pointer-events: none;
+            text-shadow: 0 0 10px rgba(0, 242, 255, 0.7);
+            z-index: 10;
+        }
+
+        .stat-box { font-size: 18px; margin-bottom: 5px; }
+
+        /* --- 虛擬鍵盤樣式 --- */
+        #virtual-keyboard {
+            width: 100%;
+            background: rgba(10, 10, 30, 0.98);
+            padding: 8px 4px;
+            flex-shrink: 0; 
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            box-sizing: border-box;
+            border-top: 2px solid #00f2ff;
+            padding-bottom: env(safe-area-inset-bottom, 8px); 
+            z-index: 50;
+        }
+
+        @media (min-width: 768px) {
+            #virtual-keyboard {
+                display: none !important;
+            }
+        }
+
+        .keyboard-row {
+            display: flex;
+            justify-content: center;
+            gap: 4px;
+            width: 100%;
+        }
+
+        .key {
+            background: rgba(0, 242, 255, 0.15);
+            border: 1px solid #00f2ff;
+            color: #00f2ff;
+            flex: 1;
+            max-width: 45px; 
+            height: 48px; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            border-radius: 6px;
+            font-size: 20px;
+            cursor: pointer;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            box-shadow: 0 0 5px rgba(0, 242, 255, 0.2);
+        }
+
+        .key:active {
+            background: #00f2ff;
+            color: #000;
+        }
+
+        #message-box {
+            position: absolute;
+            top: 40%; left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: white;
+            background: rgba(0, 0, 0, 0.95);
+            padding: 30px;
+            border: 2px solid #00f2ff;
+            border-radius: 20px;
+            display: block;
+            pointer-events: auto;
+            z-index: 100;
+            min-width: 280px;
+            box-sizing: border-box;
+        }
+
+        button {
+            background: #00f2ff; color: #000;
+            border: none; padding: 12px 30px;
+            font-size: 20px; font-weight: bold;
+            border-radius: 5px; cursor: pointer;
+            margin-top: 15px; transition: all 0.3s;
+        }
+        button:disabled { background: #444; color: #888; cursor: not-allowed; }
+
+        #current-input-display {
+            position: absolute;
+            bottom: 20px; 
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            font-size: 32px;
+            font-family: 'Courier New', Courier, monospace;
+            letter-spacing: 3px;
+            text-shadow: 0 0 10px #00f2ff;
+            min-height: 40px;
+            pointer-events: none;
+            z-index: 5;
+            background: rgba(0,0,0,0.5);
+            padding: 0 10px;
+            border-radius: 5px;
+        }
+        
+        @media (max-width: 767px) {
+            #current-input-display {
+                bottom: 10px;
+            }
+        }
+
+        .highscore-info { color: #ffcc00; margin-top: 10px; font-size: 16px; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui-layer">
+        <div class="stat-box">分數: <span id="score-val">0</span></div>
+        <div class="stat-box">生命: <span id="health-val">5</span></div>
+    </div>
+
+    <div id="current-input-display"></div>
+
+    <div id="message-box">
+        <h1 id="msg-title" style="font-size: 24px;">星際單字防衛戰</h1>
+        <div id="score-display" style="display:none">
+            <p id="msg-desc"></p>
+        </div>
+        <div class="highscore-info" id="highscore-text">正在偵測星際網路...</div>
+        <button id="start-btn" disabled>連線中...</button>
+    </div>
+
+    <div id="virtual-keyboard">
+        <div class="keyboard-row">
+            <div class="key" data-key="q">Q</div><div class="key" data-key="w">W</div><div class="key" data-key="e">E</div><div class="key" data-key="r">R</div><div class="key" data-key="t">T</div>
+            <div class="key" data-key="y">Y</div><div class="key" data-key="u">U</div><div class="key" data-key="i">I</div><div class="key" data-key="o">O</div><div class="key" data-key="p">P</div>
+        </div>
+        <div class="keyboard-row">
+            <div class="key" data-key="a">A</div><div class="key" data-key="s">S</div><div class="key" data-key="d">D</div><div class="key" data-key="f">F</div><div class="key" data-key="g">G</div>
+            <div class="key" data-key="h">H</div><div class="key" data-key="j">J</div><div class="key" data-key="k">K</div><div class="key" data-key="l">L</div>
+        </div>
+        <div class="keyboard-row">
+            <div class="key" data-key="z">Z</div><div class="key" data-key="x">X</div><div class="key" data-key="c">C</div><div class="key" data-key="v">V</div>
+            <div class="key" data-key="b">B</div><div class="key" data-key="n">N</div><div class="key" data-key="m">M</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let db = null, auth = null, currentUser = null;
+    let appId = 'star-vocab-game';
+    let firebaseEnabled = false;
+
+    const startBtn = document.getElementById('start-btn');
+    const highscoreText = document.getElementById('highscore-text');
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score-val');
+    const healthEl = document.getElementById('health-val');
+    const messageBox = document.getElementById('message-box');
+    const inputDisplay = document.getElementById('current-input-display');
+
+    function enableStartButton(statusMsg) {
+        startBtn.disabled = false;
+        startBtn.textContent = "開始遊戲";
+        if (statusMsg) highscoreText.textContent = statusMsg;
+    }
+
+    const safetyTimer = setTimeout(() => {
+        if (startBtn.disabled) enableStartButton("離線模式啟動");
+    }, 3000);
+
+    async function initSystem() {
+        try {
+            if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                const config = JSON.parse(__firebase_config);
+                firebase.initializeApp(config);
+                auth = firebase.auth();
+                db = firebase.firestore();
+                appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                firebaseEnabled = true;
+
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await auth.signInWithCustomToken(__initial_auth_token);
+                } else {
+                    await auth.signInAnonymously();
+                }
+
+                auth.onAuthStateChanged((user) => {
+                    if (user) {
+                        currentUser = user;
+                        clearTimeout(safetyTimer);
+                        enableStartButton("系統就緒 (已連線)");
+                        loadHighScore();
+                    }
+                });
+            } else { throw new Error(); }
+        } catch (e) {
+            firebaseEnabled = false;
+            clearTimeout(safetyTimer);
+            enableStartButton("離線模式");
+        }
+    }
+
+    async function loadHighScore() {
+        if (!firebaseEnabled || !currentUser) return;
+        try {
+            const scoresCol = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('scores');
+            const snapshot = await scoresCol.get();
+            let max = 0, player = "無";
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                if (data.score > max) { max = data.score; player = data.playerName; }
+            });
+            highscoreText.textContent = `最高紀錄：${max} (${player})`;
+        } catch (e) {}
+    }
+
+    async function saveScore(finalScore) {
+        if (!firebaseEnabled || !currentUser || finalScore <= 0) return;
+        try {
+            const scoreRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('scores').doc(currentUser.uid);
+            const docSnap = await scoreRef.get();
+            if (!docSnap.exists || finalScore > docSnap.data().score) {
+                await scoreRef.set({
+                    score: finalScore,
+                    playerName: "精英防衛官",
+                    timestamp: Date.now(),
+                    userId: currentUser.uid
+                });
+            }
+        } catch (e) {}
+    }
+
+    // --- 遊戲核心邏輯 ---
+    // 修改後的單字列表：依照順序排列
+    const vocabSequence = [
+        "Jane", "is", "an", "ugly", "man", "and", "has", "serious", "BO", "problems"
+    ];
+    let sequenceIndex = 0; // 用來追蹤現在該出哪個字
+
+    let score = 0, health = 5, gameActive = false, enemies = [], particles = [], laser = null;
+    let targetEnemy = null, currentInput = "", spawnTimer = 0, spawnRate = 120;
+
+    function resize() {
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+    }
+    window.addEventListener('resize', resize);
+    setTimeout(resize, 200);
+
+    class Particle {
+        constructor(x, y, color) {
+            this.x = x; this.y = y; this.color = color;
+            this.size = Math.random() * 3 + 2;
+            this.speedX = (Math.random() - 0.5) * 8;
+            this.speedY = (Math.random() - 0.5) * 8;
+            this.life = 1.0;
+        }
+        update() { this.x += this.speedX; this.y += this.speedY; this.life -= 0.02; }
+        draw() {
+            ctx.save(); ctx.globalAlpha = Math.max(0, this.life); ctx.fillStyle = this.color;
+            ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        }
+    }
+
+    class Enemy {
+        constructor(word) {
+            this.word = word;
+            this.x = Math.random() * (canvas.width - 160) + 80;
+            this.y = -30;
+            this.speed = 0.5 + Math.random() * 0.4 + (score / 3000);
+        }
+        update() {
+            this.y += this.speed;
+            if (this.y > canvas.height - 10) {
+                health--; healthEl.textContent = health;
+                if (health <= 0) gameOver();
+                return true;
+            }
+            return false;
+        }
+        draw() {
+            ctx.save();
+            ctx.font = "bold 20px 'Courier New'";
+            const textWidth = ctx.measureText(this.word).width;
+            ctx.fillStyle = "rgba(0, 10, 30, 0.9)";
+            ctx.fillRect(this.x - textWidth/2 - 10, this.y - 15, textWidth + 20, 30);
+            ctx.strokeStyle = (targetEnemy === this) ? "#00f2ff" : "#444";
+            ctx.lineWidth = (targetEnemy === this) ? 2 : 1;
+            ctx.strokeRect(this.x - textWidth/2 - 10, this.y - 15, textWidth + 20, 30);
+            ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            if (targetEnemy === this) {
+                const typed = this.word.substring(0, currentInput.length);
+                const untyped = this.word.substring(currentInput.length);
+                const totalW = ctx.measureText(this.word).width;
+                const typedW = ctx.measureText(typed).width;
+                ctx.fillStyle = "#00f2ff"; 
+                ctx.fillText(typed, this.x - totalW/2 + typedW/2, this.y);
+                ctx.fillStyle = "#ffffff"; 
+                ctx.fillText(untyped, this.x + totalW/2 - ctx.measureText(untyped).width/2, this.y);
+            } else {
+                ctx.fillStyle = "#ffffff"; ctx.fillText(this.word, this.x, this.y);
+            }
+            ctx.restore();
+        }
+    }
+
+    function gameOver() {
+        gameActive = false;
+        messageBox.style.display = "block";
+        document.getElementById('score-display').style.display = "block";
+        document.getElementById('msg-title').textContent = "防衛失敗！";
+        document.getElementById('msg-desc').innerHTML = `戰果評定：${score} 分`;
+        startBtn.textContent = "重新挑戰";
+        saveScore(score);
+    }
+
+    function speak(text) {
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US';
+            window.speechSynthesis.speak(utterance);
+        }
+    }
+
+    function handleInput(char) {
+        if (!gameActive) return;
+        // 轉小寫比較，避免大小寫問題
+        const charLower = char.toLowerCase();
+
+        if (!targetEnemy) {
+            let matches = enemies.filter(en => en.word.toLowerCase().startsWith(charLower));
+            if (matches.length > 0) {
+                matches.sort((a, b) => b.y - a.y);
+                targetEnemy = matches[0];
+                currentInput = targetEnemy.word.substring(0, 1);
+            }
+        } else {
+            const nextCharInWord = targetEnemy.word[currentInput.length].toLowerCase();
+            if (charLower === nextCharInWord) {
+                currentInput += targetEnemy.word[currentInput.length];
+            }
+        }
+
+        inputDisplay.textContent = currentInput.toUpperCase();
+
+        if (targetEnemy && currentInput === targetEnemy.word) {
+            laser = { tx: targetEnemy.x, ty: targetEnemy.y, life: 8 };
+            speak(targetEnemy.word);
+            score += targetEnemy.word.length * 10;
+            scoreEl.textContent = score;
+            for (let i = 0; i < 10; i++) particles.push(new Particle(targetEnemy.x, targetEnemy.y, "#00f2ff"));
+            enemies = enemies.filter(en => en !== targetEnemy);
+            targetEnemy = null; currentInput = ""; inputDisplay.textContent = "";
+        }
+    }
+
+    window.addEventListener('keydown', (e) => {
+        const char = e.key;
+        if (/^[a-zA-Z]$/.test(char)) handleInput(char);
+    });
+
+    document.querySelectorAll('.key').forEach(keyEl => {
+        const char = keyEl.getAttribute('data-key');
+        if (!char) return;
+
+        keyEl.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            handleInput(char);
+        });
+        keyEl.addEventListener('mousedown', (e) => {
+            e.preventDefault(); 
+            handleInput(char);
+        });
+    });
+
+    function update() {
+        if (!gameActive) return;
+        spawnTimer++;
+        if (spawnTimer >= spawnRate) {
+            // 依照順序產生單字
+            const nextWord = vocabSequence[sequenceIndex];
+            enemies.push(new Enemy(nextWord));
+            sequenceIndex = (sequenceIndex + 1) % vocabSequence.length; // 循環索引
+            
+            spawnTimer = 0;
+            spawnRate = Math.max(70, 120 - Math.floor(score/500));
+        }
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            if (enemies[i].update()) {
+                if (targetEnemy === enemies[i]) { targetEnemy = null; currentInput = ""; inputDisplay.textContent = ""; }
+                enemies.splice(i, 1);
+            }
+        }
+        particles.forEach((p, idx) => { p.update(); if (p.life <= 0) particles.splice(idx, 1); });
+        if (laser) { laser.life--; if (laser.life <= 0) laser = null; }
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
+        for(let i=0; i<20; i++) ctx.fillRect((i * 137) % canvas.width, (i * 243) % canvas.height, 1, 1);
+        
+        enemies.forEach(enemy => enemy.draw());
+        particles.forEach(p => p.draw());
+
+        const cx = canvas.width / 2;
+        const cy = canvas.height - 25; 
+        ctx.save();
+        ctx.translate(cx, cy);
+        if (targetEnemy) {
+            const angle = Math.atan2(targetEnemy.y - cy, targetEnemy.x - cx);
+            ctx.rotate(angle + Math.PI / 2);
+        }
+        ctx.fillStyle = "#00f2ff"; ctx.fillRect(-8, -30, 16, 30);
+        ctx.beginPath(); ctx.arc(0, 0, 25, 0, Math.PI, true);
+        ctx.fillStyle = "#003366"; ctx.fill();
+        ctx.restore();
+
+        if (laser) {
+            ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(laser.tx, laser.ty);
+            ctx.strokeStyle = "#00f2ff"; ctx.lineWidth = laser.life; ctx.stroke();
+        }
+    }
+
+    function gameLoop() { 
+        update(); draw(); requestAnimationFrame(gameLoop); 
+    }
+
+    startBtn.addEventListener('click', () => {
+        score = 0; health = 5; enemies = []; particles = []; targetEnemy = null;
+        currentInput = ""; scoreEl.textContent = "0"; healthEl.textContent = "5";
+        inputDisplay.textContent = ""; gameActive = true;
+        sequenceIndex = 0; // 重置順序
+        messageBox.style.display = "none";
+        resize();
+    });
+
+    initSystem();
+    gameLoop();
+</script>
+</body>
+</html>
